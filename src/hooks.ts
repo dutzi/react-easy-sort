@@ -31,6 +31,10 @@ const enableContextMenu = () => {
   window.removeEventListener('contextmenu', preventDefault)
 }
 
+const calcDistance = (x1: number, y1: number, x2: number, y2: number) => {
+  return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2))
+}
+
 export type OnStartArgs = { point: Point; pointInWindow: Point }
 export type OnMoveArgs = { point: Point; pointInWindow: Point }
 
@@ -40,9 +44,17 @@ type UseDragProps = {
   onEnd?: () => void
   containerRef: React.MutableRefObject<HTMLElement | null>
   knobs?: HTMLElement[]
+  minDistance?: number
 }
 
-export const useDrag = ({ onStart, onMove, onEnd, containerRef, knobs }: UseDragProps) => {
+export const useDrag = ({
+  onStart,
+  onMove,
+  onEnd,
+  containerRef,
+  knobs,
+  minDistance,
+}: UseDragProps) => {
   // contains the top-left coordinates of the container in the window. Set on drag start and used in drag move
   const containerPositionRef = React.useRef<Point>({ x: 0, y: 0 })
   // on touch devices, we only start the drag gesture after pressing the item 200ms.
@@ -59,6 +71,10 @@ export const useDrag = ({ onStart, onMove, onEnd, containerRef, knobs }: UseDrag
   // instead of relying on hacks to know if the device is a touch device or not,
   // we track this using an onTouchStart listener on the document. (see https://codeburst.io/the-only-way-to-detect-touch-with-javascript-7791a3346685)
   const [isTouchDevice, setTouchDevice] = React.useState(false)
+
+  // we save the x, y on drag start so that we could support minDistance, a
+  // distance from which we start the drag.
+  const mouseDownPos = React.useRef({ x: 0, y: 0 })
 
   React.useEffect(() => {
     callbacksRef.current = { onStart, onMove, onEnd }
@@ -88,6 +104,19 @@ export const useDrag = ({ onStart, onMove, onEnd, containerRef, knobs }: UseDrag
     (e: MouseEvent) => {
       // if this is the first move, we trigger the onStart logic
       if (isFirstMoveRef.current) {
+        if (minDistance !== undefined) {
+          const distance = calcDistance(
+            e.clientX,
+            e.clientY,
+            mouseDownPos.current.x,
+            mouseDownPos.current.y
+          )
+
+          if (distance < minDistance) {
+            return
+          }
+        }
+
         isFirstMoveRef.current = false
         const pointInWindow = getMousePoint(e)
         const point = getPointInContainer(pointInWindow, containerPositionRef.current)
@@ -100,7 +129,7 @@ export const useDrag = ({ onStart, onMove, onEnd, containerRef, knobs }: UseDrag
         onDrag(getMousePoint(e))
       }
     },
-    [onDrag]
+    [onDrag, minDistance]
   )
 
   const onTouchMove = React.useCallback(
@@ -157,6 +186,7 @@ export const useDrag = ({ onStart, onMove, onEnd, containerRef, knobs }: UseDrag
 
       // mark the next move as being the first one
       isFirstMoveRef.current = true
+      mouseDownPos.current = { x: e.clientX, y: e.clientY }
     },
     [onMouseMove, onMouseUp, saveContainerPosition, knobs]
   )
